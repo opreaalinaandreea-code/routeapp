@@ -105,7 +105,6 @@ function addCourier(){
     sameAsStart: true,
     departureTime: '10:00', // HH:MM, used to compute delivery time windows
     endTimeLimit: '',       // optional HH:MM, only used for a visual warning if a stop falls after it
-    confirmed: false,       // true once the courier's fields have been validated via the confirm button
     color
   });
   renderCouriers();
@@ -119,80 +118,6 @@ function removeCourier(id){
   renderAddresses();
   renderRouteSummary();
   redrawMap();
-}
-
-/**
- * Validates a single courier's configuration and marks it as confirmed if everything checks
- * out. Reads directly from the DOM first (same approach as ensureAllCourierPointsGeocoded)
- * so it also catches fields the user typed but never blurred out of.
- */
-async function confirmCourier(courierId){
-  const courier = state.couriers.find(c => c.id === courierId);
-  if (!courier) return;
-
-  // sync DOM -> state for this courier's fields, geocoding the start/end if needed
-  const card = document.querySelector(`[data-confirm="${courierId}"]`)?.closest('.courier-card');
-  if (card){
-    const startInput = card.querySelector('.start-input');
-    const endInput = card.querySelector('.end-input');
-    const departureInput = card.querySelector('.departure-input');
-    const endLimitInput = card.querySelector('.endlimit-input');
-
-    if (startInput && startInput.value.trim() !== courier.start.address){
-      courier.start.address = startInput.value.trim();
-      courier.start.status = 'pending';
-      courier.start.lat = null;
-      courier.start.lng = null;
-    }
-    if (endInput && endInput.value.trim() !== courier.end.address){
-      courier.end.address = endInput.value.trim();
-      courier.end.status = 'pending';
-      courier.end.lat = null;
-      courier.end.lng = null;
-    }
-    if (departureInput) courier.departureTime = normalizeTime(departureInput.value);
-    if (endLimitInput) courier.endTimeLimit = endLimitInput.value.trim() ? normalizeTime(endLimitInput.value) : '';
-  }
-
-  const btn = document.querySelector(`[data-confirm="${courierId}"]`);
-  if (btn){ btn.disabled = true; btn.textContent = 'Se validează…'; }
-
-  for (const pointKey of ['start', 'end']){
-    const point = courier[pointKey];
-    if (point.address && point.status === 'pending'){
-      const result = await geocodeOne(point.address);
-      if (result && result.outOfArea){
-        point.status = 'error';
-      } else if (result){
-        point.lat = result.lat;
-        point.lng = result.lng;
-        point.status = 'ok';
-      } else {
-        point.status = 'error';
-      }
-    }
-  }
-
-  // run validation checks
-  const errors = [];
-  if (!courier.name.trim()) errors.push('numele curierului');
-  if (!courier.start.address) errors.push('punctul de plecare');
-  else if (courier.start.status === 'error') errors.push('punctul de plecare nu a putut fi localizat — verifică adresa');
-  if (!courier.sameAsStart){
-    if (!courier.end.address) errors.push('punctul de finalizare');
-    else if (courier.end.status === 'error') errors.push('punctul de finalizare nu a putut fi localizat — verifică adresa');
-  }
-  if (!courier.departureTime) errors.push('ora de plecare');
-
-  if (errors.length){
-    courier.confirmed = false;
-    showToast(`Nu pot confirma ${courier.name}: completează ${errors.join(', ')}.`, true);
-  } else {
-    courier.confirmed = true;
-    showToast(`${courier.name} a fost confirmat.`);
-  }
-
-  renderCouriers();
 }
 
 function renderCouriers(){
@@ -214,7 +139,6 @@ function renderCouriers(){
         <span class="courier-dot" style="background:${c.color}"></span>
         <input type="text" class="courier-name-input" value="${escapeHtml(c.name)}"
           style="border:none;background:none;font-weight:600;font-size:13.5px;flex:1;font-family:inherit;color:inherit;padding:2px 0;">
-        ${c.confirmed ? '<span class="courier-confirmed-badge" title="Curier confirmat">✓ confirmat</span>' : ''}
         <button class="btn-icon" title="Șterge curier" data-remove="${c.id}">×</button>
       </div>
       <div class="courier-body">
@@ -246,10 +170,6 @@ function renderCouriers(){
           </div>
         </div>
 
-        <button class="btn ${c.confirmed ? 'btn-confirmed' : 'btn-accent'} btn-block btn-sm" data-confirm="${c.id}" style="margin-bottom:10px;">
-          ${c.confirmed ? '✓ Curier confirmat' : 'Confirmă curier'}
-        </button>
-
         <div class="stat-row">
           <div class="stat">
             <span class="stat-num" style="color:${c.color}">${assignedCount}</span>
@@ -277,14 +197,9 @@ function renderCouriers(){
   list.querySelectorAll('[data-remove]').forEach(btn => {
     btn.addEventListener('click', () => removeCourier(parseInt(btn.dataset.remove)));
   });
-  list.querySelectorAll('[data-confirm]').forEach(btn => {
-    btn.addEventListener('click', () => confirmCourier(parseInt(btn.dataset.confirm)));
-  });
   list.querySelectorAll('.courier-name-input').forEach((input, i) => {
     input.addEventListener('change', () => {
       state.couriers[i].name = input.value || `Curier ${state.couriers[i].id}`;
-      state.couriers[i].confirmed = false;
-      renderCouriers();
       renderRouteSummary();
       redrawMap();
     });
@@ -299,7 +214,6 @@ function renderCouriers(){
     cb.addEventListener('change', () => {
       const courier = state.couriers.find(c => c.id === parseInt(cb.dataset.same));
       courier.sameAsStart = cb.checked;
-      courier.confirmed = false;
       renderCouriers();
     });
   });
@@ -308,9 +222,7 @@ function renderCouriers(){
       const courier = state.couriers.find(c => c.id === parseInt(input.dataset.courier));
       const normalized = normalizeTime(input.value);
       courier.departureTime = normalized;
-      courier.confirmed = false;
       input.value = normalized;
-      renderCouriers();
     });
   });
   list.querySelectorAll('.endlimit-input').forEach(input => {
@@ -318,9 +230,7 @@ function renderCouriers(){
       const courier = state.couriers.find(c => c.id === parseInt(input.dataset.courier));
       const normalized = input.value.trim() ? normalizeTime(input.value) : '';
       courier.endTimeLimit = normalized;
-      courier.confirmed = false;
       input.value = normalized;
-      renderCouriers();
       renderRouteSummary(); // re-check warnings against new limit
     });
   });
@@ -333,16 +243,12 @@ async function onCourierAddressChange(input, which){
   courier[which].lat = null;
   courier[which].lng = null;
   courier[which].status = 'pending';
-  courier.confirmed = false;
-  if (!addr){ renderCouriers(); return; }
+  if (!addr) return;
 
   input.style.opacity = '0.6';
   const result = await geocodeOne(addr);
   input.style.opacity = '1';
-  if (result && result.outOfArea){
-    courier[which].status = 'error';
-    showToast(`"${addr}" se localizează în afara zonei București/Ilfov.`, true);
-  } else if (result){
+  if (result){
     courier[which].lat = result.lat;
     courier[which].lng = result.lng;
     courier[which].status = 'ok';
@@ -350,7 +256,6 @@ async function onCourierAddressChange(input, which){
     courier[which].status = 'error';
     showToast(`Nu am putut localiza: "${addr}"`, true);
   }
-  renderCouriers();
 }
 
 // -------------------------------------------------------------------
@@ -458,7 +363,6 @@ function showEditAddressForm(addrId){
       addr.status = 'pending';
       addr.confidence = null;
       addr.manuallyAdjusted = false;
-      addr.outOfArea = false;
       // this address is no longer valid in any route until re-geocoded
       Object.keys(state.routes).forEach(courierId => {
         const route = state.routes[courierId];
@@ -720,7 +624,6 @@ function addAddress(data){
     status: 'pending',
     confidence: null,        // 'high' | 'medium' | 'low' | null — geocoding precision indicator
     manuallyAdjusted: false, // true once the pin has been dragged to a corrected position
-    outOfArea: false,        // true if geocoding only found results outside the Bucharest/Ilfov service area
     courierId: null,
     manuallyAssigned: false  // true once the courier was set explicitly via the reassign dropdown
   });
@@ -770,9 +673,7 @@ function renderAddresses(){
     let statusHtml = '';
     if (a.status === 'pending') statusHtml = `<div class="addr-status">în așteptare</div>`;
     else if (a.status === 'ok'){
-      if (a.manuallyAdjusted && a.outOfArea){
-        statusHtml = `<div class="addr-status warn">⚠ poziție în afara zonei București/Ilfov <button class="addr-locate-btn" data-locate="${a.id}">verifică pe hartă</button></div>`;
-      } else if (a.manuallyAdjusted){
+      if (a.manuallyAdjusted){
         statusHtml = `<div class="addr-status ok">✓ poziție ajustată manual</div>`;
       } else if (a.confidence === 'high'){
         statusHtml = `<div class="addr-status ok">✓ localizată precis</div>`;
@@ -782,11 +683,7 @@ function renderAddresses(){
         statusHtml = `<div class="addr-status warn">⚠ incert (nivel zonă) <button class="addr-locate-btn" data-locate="${a.id}">verifică pe hartă</button></div>`;
       }
     }
-    else if (a.status === 'error'){
-      statusHtml = a.outOfArea
-        ? `<div class="addr-status err">✕ în afara zonei (București/Ilfov) <button class="addr-action-link" data-edit="${a.id}" style="font-size:10.5px;">corectează</button></div>`
-        : `<div class="addr-status err">✕ neidentificată</div>`;
-    }
+    else if (a.status === 'error') statusHtml = `<div class="addr-status err">✕ neidentificată</div>`;
 
     const courier = state.couriers.find(c => c.id === a.courierId);
     const courierSelect = `
@@ -998,23 +895,11 @@ function scoreResultConfidence(result){
   return 'low';
 }
 
-// Service area: Bucharest + Ilfov county + ~25-30km margin around it (covers nearby
-// localities like Snagov, Buftea, Periș, Ștefăneștii de Jos, etc.). Any geocoding result
-// landing outside this box is treated as wrong/out-of-country and rejected outright,
-// since deliveries are exclusively within this region.
-const SERVICE_AREA_BOUNDS = { minLat: 43.93, maxLat: 44.93, minLng: 25.40, maxLng: 26.80 };
-
-function isWithinServiceArea(lat, lng){
-  return lat >= SERVICE_AREA_BOUNDS.minLat && lat <= SERVICE_AREA_BOUNDS.maxLat &&
-         lng >= SERVICE_AREA_BOUNDS.minLng && lng <= SERVICE_AREA_BOUNDS.maxLng;
-}
-
 async function geocodeOne(address){
   if (geocodeCache.has(address)) return geocodeCache.get(address);
 
   const variants = buildAddressVariants(address);
   let bestResult = null;
-  let sawOutOfAreaResult = false;
 
   for (const variant of variants){
     try {
@@ -1022,19 +907,10 @@ async function geocodeOne(address){
       const res = await fetch(url, { headers: { 'Accept-Language': 'ro' } });
       const data = await res.json();
       if (data && data.length){
-        const lat = parseFloat(data[0].lat);
-        const lng = parseFloat(data[0].lon);
-
-        if (!isWithinServiceArea(lat, lng)){
-          // Nominatim returned a result outside Bucharest/Ilfov+margin — reject it even if
-          // it would otherwise look "confident", and keep trying other query variants.
-          sawOutOfAreaResult = true;
-          continue;
-        }
-
         const confidence = scoreResultConfidence(data[0]);
         const result = {
-          lat, lng,
+          lat: parseFloat(data[0].lat),
+          lng: parseFloat(data[0].lon),
           confidence,
           matchedQuery: variant,
           displayName: data[0].display_name || ''
@@ -1049,13 +925,6 @@ async function geocodeOne(address){
       console.error('Geocode error', e);
     }
     if (variant !== variants[variants.length - 1]) await sleep(1000); // respect Nominatim rate limit between cascade attempts
-  }
-
-  if (!bestResult && sawOutOfAreaResult){
-    // every variant resolved to somewhere outside the service area — flag distinctly so the
-    // UI can show a clear "out of area" error instead of a generic "not found"
-    geocodeCache.set(address, { outOfArea: true });
-    return { outOfArea: true };
   }
 
   geocodeCache.set(address, bestResult);
@@ -1074,26 +943,18 @@ async function geocodeAllPending(){
 
   let done = 0;
   let lowConfidenceCount = 0;
-  let outOfAreaCount = 0;
   for (const a of pending){
     statusRow.querySelector('span:last-child').textContent = `Se localizează ${done + 1}/${pending.length}…`;
     const result = await geocodeOne(a.raw);
-    if (result && result.outOfArea){
-      a.status = 'error';
-      a.confidence = null;
-      a.outOfArea = true;
-      outOfAreaCount++;
-    } else if (result){
+    if (result){
       a.lat = result.lat;
       a.lng = result.lng;
       a.status = 'ok';
       a.confidence = result.confidence;
-      a.outOfArea = false;
       if (result.confidence !== 'high') lowConfidenceCount++;
     } else {
       a.status = 'error';
       a.confidence = null;
-      a.outOfArea = false;
     }
     done++;
     renderAddresses();
@@ -1104,9 +965,7 @@ async function geocodeAllPending(){
 
   statusRow.style.display = 'none';
   const errCount = state.addresses.filter(a => a.status === 'error').length;
-  if (outOfAreaCount > 0){
-    showToast(`${outOfAreaCount} adrese localizate în afara zonei de livrare (București/Ilfov) — corectează-le manual.`, true);
-  } else if (errCount > 0){
+  if (errCount > 0){
     showToast(`${done} adrese procesate, ${errCount} neidentificate.`, true);
   } else if (lowConfidenceCount > 0){
     showToast(`${done} adrese localizate, ${lowConfidenceCount} cu precizie aproximativă — verifică-le pe hartă.`, true);
@@ -1209,9 +1068,7 @@ async function ensureAllCourierPointsGeocoded(){
       const point = courier[pointKey];
       if (point.address && point.status === 'pending'){
         const result = await geocodeOne(point.address);
-        if (result && result.outOfArea){
-          point.status = 'error';
-        } else if (result){
+        if (result){
           point.lat = result.lat;
           point.lng = result.lng;
           point.status = 'ok';
@@ -1621,7 +1478,6 @@ function onAddressMarkerDragged(addrId, newLatLng){
   addr.lng = newLatLng.lng;
   addr.manuallyAdjusted = true;
   addr.confidence = 'high'; // manual placement is by definition the most trustworthy
-  addr.outOfArea = !isWithinServiceArea(newLatLng.lat, newLatLng.lng);
 
   // any route containing this address now has a stale leg/geometry — recompute distances
   Object.keys(state.routes).forEach(courierId => {
@@ -1635,11 +1491,7 @@ function onAddressMarkerDragged(addrId, newLatLng){
   renderCouriers();
   renderRouteSummary();
   redrawMap();
-  if (addr.outOfArea){
-    showToast('Atenție: poziția trasă este în afara zonei București/Ilfov.', true);
-  } else {
-    showToast('Poziție actualizată manual.');
-  }
+  showToast('Poziție actualizată manual.');
 }
 
 function focusAddressOnMap(addrId){
