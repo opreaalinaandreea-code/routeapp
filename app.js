@@ -50,7 +50,7 @@ function showToast(msg, isError=false){
 // MAP
 // -------------------------------------------------------------------
 function initMap(){
-  map = L.map('map', { zoomControl:true }).setView([44.4323, 26.1063], 11); // Bucuresti/Ilfov implicit
+  map = L.map('map', { zoomControl:true }).setView([44.4323, 26.1063], 11); // Centrat pe București/Ilfov
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap, © CARTO'
@@ -156,7 +156,9 @@ async function confirmCourier(courierId){
     const point = courier[pointKey];
     if (point.address && point.status === 'pending'){
       const result = await geocodeOne(point.address);
-      if (result){
+      if (result && result.outOfArea){
+        point.status = 'error';
+      } else if (result){
         point.lat = result.lat;
         point.lng = result.lng;
         point.status = 'ok';
@@ -169,10 +171,10 @@ async function confirmCourier(courierId){
   const errors = [];
   if (!courier.name.trim()) errors.push('numele curierului');
   if (!courier.start.address) errors.push('punctul de plecare');
-  else if (courier.start.status === 'error') errors.push('punctul de plecare nu a putut fi localizat');
+  else if (courier.start.status === 'error') errors.push('punctul de plecare este în afara zonei deservite (București/Ilfov)');
   if (!courier.sameAsStart){
     if (!courier.end.address) errors.push('punctul de finalizare');
-    else if (courier.end.status === 'error') errors.push('punctul de finalizare nu a putut fi localizat');
+    else if (courier.end.status === 'error') errors.push('punctul de finalizare este în afara zonei deservite (București/Ilfov)');
   }
   if (!courier.departureTime) errors.push('ora de plecare');
 
@@ -331,7 +333,11 @@ async function onCourierAddressChange(input, which){
   input.style.opacity = '0.6';
   const result = await geocodeOne(addr);
   input.style.opacity = '1';
-  if (result){
+
+  if (result && result.outOfArea){
+    courier[which].status = 'error';
+    showToast(`"${addr}" este în afara zonei București/Ilfov.`, true);
+  } else if (result){
     courier[which].lat = result.lat;
     courier[which].lng = result.lng;
     courier[which].status = 'ok';
@@ -718,7 +724,7 @@ function renderAddresses(){
 
     let statusText = 'În așteptare';
     if (a.status === 'ok') statusText = 'Localizat';
-    if (a.status === 'error') statusText = 'Eroare localizare';
+    if (a.status === 'error') statusText = 'Eroare localizare / Zonă';
 
     const courierOptions = state.couriers.map(c => `
       <option value="${c.id}" ${a.courierId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>
@@ -819,10 +825,13 @@ async function geocodeOne(addressStr){
     const res = await fetch(url, { headers: { 'User-Agent': 'CourierRoutePlannerApp/1.0' } });
     const data = await res.json();
     if (data && data.length > 0){
-      return {
-        lat: parseFloat(data[0].lat),
-        lng: parseFloat(data[0].lon)
-      };
+      const lat = parseFloat(data[0].lat);
+      const lng = parseFloat(data[0].lon);
+      
+      // Filtrare strictă geografică (București, Ilfov și împrejurimi)
+      // Coordonate aproximative bounds: Lat [44.15, 44.75], Lng [25.70, 26.50]
+      const outOfArea = (lat < 44.15 || lat > 44.75 || lng < 25.70 || lng > 26.50);
+      return { lat, lng, outOfArea };
     }
   } catch (e) {
     console.error('Eroare geocodare pentru: ' + addressStr, e);
@@ -842,14 +851,16 @@ async function geocodeAllPending(){
   for (let i = 0; i < pending.length; i++){
     const a = pending[i];
     const res = await geocodeOne(a.raw);
-    if (res){
+    if (res && res.outOfArea) {
+      a.status = 'error';
+    } else if (res){
       a.lat = res.lat;
       a.lng = res.lng;
       a.status = 'ok';
     } else {
       a.status = 'error';
     }
-    await new Promise(r => setTimeout(r, 1000)); // rate limiting obligatoriu
+    await new Promise(r => setTimeout(r, 1000)); // Respectarea politicilor Nominatim
   }
 
   btn.style.display = 'block';
@@ -942,58 +953,69 @@ function autoDistributeAddresses(){
     return;
   }
 
-  okAddresses.forEach(addr => {
-    let minDist = Infinity;
-    let bestCourierId = confirmedCouriers[0].id;
-
-    confirmedCouriers.forEach(c => {
-      const d = Math.getDistance(addr.lat, addr.lng, c.start.lat, c.start.lng);
-      if (d < minDist){
-        minDist = d;
-        bestCourierId = c.id;
-      }
-    });
-
-    addr.courierId = bestCourierId;
-    if (!state.routes[bestCourierId]) {
-      state.routes[bestCourierId] = { order: [], legs: [], totalKm: 0, totalMin: 0 };
-    }
-    if (!state.routes[bestCourierId].order.includes(addr.id)) {
-      state.routes[bestCourierId].order.push(addr.id);
-    }
-  });
-
+  // Resetăm distribuțiile anterioare rute
   confirmedCouriers.forEach(c => {
-    const r = state.routes[c.id];
-    if (!r || !r.order.length) return;
+    state.routes[c.id] = { order: [], legs: [], totalKm: 0, totalMin: 0 };
+  });
+  okAddresses.forEach(a => a.courierId = null);
 
-    let currentLat = c.start.lat;
-    let currentLng = c.start.lng;
-    const remaining = [...r.order];
-    const sortedOrder = [];
+  const unassigned = [...okAddresses];
+  const AVG_SPEED_KMH = 35; // viteză medie estimată urbană București/Ilfov
+  const TIME_PER_STOP_MIN = 5; // minute alocate per client
 
-    while (remaining.length > 0) {
-      let closestIdx = 0;
-      let closestDist = Infinity;
+  // Repartizare inteligentă Greedy bazată pe BALANSAREA TIMPULUI DE LIVRARE TOTAL
+  while (unassigned.length > 0) {
+    let bestAddrIdx = -1;
+    let bestCourierId = -1;
+    let minAddedTime = Infinity;
 
-      for (let i = 0; i < remaining.length; i++) {
-        const addr = state.addresses.find(a => a.id === remaining[i]);
-        const d = Math.getDistance(currentLat, currentLng, addr.lat, addr.lng);
-        if (d < closestDist) {
-          closestDist = d;
-          closestIdx = i;
+    for (let i = 0; i < unassigned.length; i++) {
+      const addr = unassigned[i];
+
+      for (let j = 0; j < confirmedCouriers.length; j++) {
+        const c = confirmedCouriers[j];
+        const route = state.routes[c.id];
+        
+        let lastLat = c.start.lat;
+        let lastLng = c.start.lng;
+        
+        if (route.order.length > 0) {
+          const lastAddrId = route.order[route.order.length - 1];
+          const lastAddr = state.addresses.find(a => a.id === lastAddrId);
+          if (lastAddr) {
+            lastLat = lastAddr.lat;
+            lastLng = lastAddr.lng;
+          }
+        }
+
+        const distanceKm = Math.getDistance(lastLat, lastLng, addr.lat, addr.lng);
+        const drivingTimeMin = (distanceKm / AVG_SPEED_KMH) * 60;
+        const potentialAddedTime = drivingTimeMin + TIME_PER_STOP_MIN;
+
+        const currentTotalMin = route.totalMin + potentialAddedTime;
+        if (currentTotalMin < minAddedTime) {
+          minAddedTime = currentTotalMin;
+          bestAddrIdx = i;
+          bestCourierId = c.id;
         }
       }
-
-      const nextId = remaining.splice(closestIdx, 1)[0];
-      sortedOrder.push(nextId);
-      const nextAddr = state.addresses.find(a => a.id === nextId);
-      currentLat = nextAddr.lat;
-      currentLng = nextAddr.lng;
     }
 
-    r.order = sortedOrder;
-    recalcRouteDistance(c.id);
+    if (bestAddrIdx !== -1) {
+      const assignedAddr = unassigned.splice(bestAddrIdx, 1)[0];
+      assignedAddr.courierId = bestCourierId;
+      state.routes[bestCourierId].order.push(assignedAddr.id);
+      state.routes[bestCourierId].totalMin = minAddedTime;
+    } else {
+      break;
+    }
+  }
+
+  // Apelare OSRM străzi reale pentru rutele asamblate geografic
+  confirmedCouriers.forEach(c => {
+    if (state.routes[c.id] && state.routes[c.id].order.length > 0) {
+      recalcRouteDistance(c.id);
+    }
   });
 
   renderAddresses();
@@ -1001,7 +1023,7 @@ function autoDistributeAddresses(){
   renderRouteSummary();
   redrawMap();
   document.getElementById('exportBtn').removeAttribute('disabled');
-  showToast('Repartizarea și optimizarea automată s-au încheiat.');
+  showToast('Repartizarea echilibrată ca timp de livrare s-a finalizat cu succes.');
 }
 
 // -------------------------------------------------------------------
@@ -1059,8 +1081,6 @@ function renderRouteSummary(){
     container.innerHTML = '<div style="font-size:12px; color:#64748b; text-align:center; padding:20px;">Nu există trasee active calculate.</div>';
   }
 }
-
-function BlacklistAreaCheck() { return false; } // fallback
 
 function redrawMap(){
   markersLayer.clearLayers();
