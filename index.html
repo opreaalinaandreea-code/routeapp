@@ -3,59 +3,87 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Route Planner Curieri</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Route Planner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <header class="brand">
-        <h1>Route Planner</h1>
-        <p>Curieri · geocodare · intervale de livrare</p>
-      </header>
+      <div class="brand">
+        <div class="brand-title">Route Planner</div>
+        <div class="brand-sub">Curieri · adrese · intervale de livrare</div>
+        <div id="dateStamp" class="date-stamp"></div>
+      </div>
 
-      <section class="panel">
-        <h2>Import</h2>
-        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.numbers" />
-        <div class="hint">Importă exportul WooCommerce sau un fișier de test CSV/XLSX.</div>
-      </section>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Import</h2>
+        </div>
 
-      <section class="panel">
-        <h2>Curieri</h2>
-        <div id="couriersList"></div>
-        <button id="addCourierBtn">+ Adaugă curier</button>
-      </section>
+        <div id="dropzone" class="dropzone">
+          Trage fișierul aici sau dă click pentru upload.
+          <div class="dropzone-sub">CSV / XLSX / XLS / Numbers exportat</div>
+        </div>
 
-      <section class="panel">
-        <h2>Adrese</h2>
-        <div id="addressesList"></div>
-      </section>
+        <input id="fileInput" type="file" accept=".csv,.xlsx,.xls,.numbers" hidden />
+        <button id="addManualBtn" class="btn btn-secondary" type="button">Adaugă adresă manual</button>
+        <button id="geocodeBtn" class="btn btn-primary" type="button">Localizează adresele</button>
 
-      <section class="panel">
-        <h2>Trasee</h2>
-        <div id="routesList"></div>
-      </section>
+        <div id="geocodeSection" class="geocode-section" style="display:none;">
+          <div class="section-caption">Geocodare</div>
+        </div>
+      </div>
 
-      <section class="panel actions">
-        <button id="geocodeBtn">Localizează adresele</button>
-        <button id="autoAssignBtn">Repartizează automat</button>
-        <button id="exportBtn">Export Excel</button>
-      </section>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Curieri <span id="courierCount">0</span></h2>
+        </div>
+        <div id="courierList" class="courier-list"></div>
+        <button id="addCourierBtn" class="btn btn-secondary" type="button">+ Adaugă curier</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Adrese</h2>
+        </div>
+        <div id="addrList" class="addr-list"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Trasee</h2>
+        </div>
+        <div id="routeSummary" class="route-summary"></div>
+      </div>
+
+      <div class="panel panel-actions">
+        <button id="autoAssignBtn" class="btn btn-primary" type="button">Repartizează automat</button>
+        <button id="exportBtn" class="btn btn-secondary" type="button">Export Excel</button>
+        <button id="resetBtn" class="btn btn-danger" type="button">Reset</button>
+      </div>
     </aside>
 
     <main class="main">
+      <div class="map-topbar">
+        <div>
+          <div id="mapTitle" class="map-title">Niciun traseu activ</div>
+          <div id="mapSub" class="map-sub">0 adrese · 0 curieri</div>
+        </div>
+        <div id="mapLegend" class="map-legend"></div>
+      </div>
       <div id="map"></div>
     </main>
   </div>
 
-  <div id="modalRoot"></div>
+  <div id="columnPicker" class="column-picker" style="display:none;"></div>
+  <div id="toast" class="toast"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js"></script>
+  <script src="app-9-2.js"></script>
 </body>
 </html>
