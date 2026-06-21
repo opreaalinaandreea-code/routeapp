@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planificator Trasee Curieri</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-main">
+                <h1>Planificator Trasee Curieri</h1>
+                <span id="date-stamp" class="date-stamp"></span>
+            </div>
+            <div class="action-bar" id="action-bar">
+                <button id="btn-optimize" class="btn btn-primary">Optimizează Trasee</button>
+                <button id="btn-export" class="btn btn-secondary">Exportă Excel</button>
+                <button id="btn-clear" class="btn btn-danger">Șterge Tot</button>
+            </div>
+        </header>
+
+        <main class="app-content">
+            <!-- Tabs Navigation -->
+            <div class="tabs-nav">
+                <button class="tab-btn active" data-tab="tab-config">Configurare Proiect</button>
+                <button class="tab-btn" data-tab="tab-map">Hartă & Vizualizare</button>
+            </div>
+
+            <!-- Tab: Configurare -->
+            <div id="tab-config" class="tab-content active">
+                <div class="config-grid">
+                    <!-- Panou Curieri -->
+                    <section class="panel" id="courier-panel">
+                        <h2>Curieri</h2>
+                        <div class="panel-actions">
+                            <button id="btn-add-courier" class="btn btn-small">Adaugă Curier</button>
+                        </div>
+                        <div id="couriers-list" class="list-container">
+                            <!-- Curierii se adaugă din JS -->
+                        </div>
+                    </section>
+
+                    <!-- Panou Adrese -->
+                    <section class="panel" id="address-panel">
+                        <h2>Adrese Clienți / Comenzi</h2>
+                        <div class="panel-actions">
+                            <textarea id="bulk-address-input" placeholder="Lipește adrese din WooCommerce sau text brut...&#10;Format sugerat: Nume Client, Telefon, Adresă, Suma, Metoda Plată" rows="3"></textarea>
+                            <button id="btn-import-addresses" class="btn btn-small btn-success">Importă Adrese</button>
+                        </div>
+                        <div id="addresses-list" class="list-container">
+                            <!-- Adresele se adaugă din JS -->
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Tab: Hartă și Rezultate -->
+            <div id="tab-map" class="tab-content">
+                <div class="map-grid">
+                    <!-- Zona Hărții -->
+                    <div id="map-container">
+                        <div id="map"></div>
+                    </div>
+
+                    <!-- Rezultate Rute -->
+                    <section class="panel" id="route-panel">
+                        <h2>Sumar Trasee & Distribuție</h2>
+                        <div id="routes-summary" class="routes-summary-container">
+                            <!-- Rezumatul rutelor din JS -->
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- SheetJS (XLSX) pentru Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Scriptul principal al aplicației -->
+    <script src="app.js"></script>
+</body>
+</html>
