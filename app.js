@@ -5,9 +5,9 @@
 
 const COURIER_COLORS = ['#FF5A1F', '#8B5CF6', '#1D7FBF', '#2D6A4F', '#C2347E', '#B8860B'];
 const state = {
-  couriers: [], // {id, name, start:{address,lat,lng,status}, end:{address,lat,lng,status}, sameAsStart, departureTime, endTimeLimit, confirmed, color}
-  addresses: [], // {id, raw, details, clientName, phone, amount, paymentMethod, lat, lng, status:'pending'|'ok'|'error', courierId:null}
-  routes: {}, // courierId -> {order:[addressId...], legs:[{distKm,durMin}], totalKm, totalMin}
+  couriers: [],
+  addresses: [],
+  routes: {},
   nextCourierId: 1,
   nextAddrId: 1,
 };
@@ -47,10 +47,6 @@ function showToast(msg, isError=false){
   t._timer = setTimeout(() => t.classList.remove('show'), 3200);
 }
 
-// -------------------------------------------------------------------
-// MAP
-// -------------------------------------------------------------------
-
 function initMap(){
   map = L.map('map', { zoomControl:true }).setView([45.9432, 24.9668], 7);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -69,10 +65,6 @@ function updateMapTopBar(){
   if (title) title.textContent = Object.keys(state.routes).length > 0 ? 'Trasee active' : 'Niciun traseu activ';
 }
 
-// -------------------------------------------------------------------
-// TABS
-// -------------------------------------------------------------------
-
 function initTabs(){
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -89,10 +81,6 @@ function switchToTab(panelId){
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.panel === panelId));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === panelId));
 }
-
-// -------------------------------------------------------------------
-// COURIERS
-// -------------------------------------------------------------------
 
 function initCourierPanel(){
   const btn = document.getElementById('addCourierBtn');
@@ -215,65 +203,103 @@ function renderCouriers(){
     const totalToCollect = assignedAddrs.reduce((sum, a) => sum + (a.amount || 0), 0);
 
     card.innerHTML = `
-      <div class="courier-title">
-        <strong contenteditable="true" data-name="${c.id}">${escapeHtml(c.name)}</strong>
-        <div class="courier-actions">
-          <button class="btn btn-sm btn-secondary" data-confirm="${c.id}">Confirmă</button>
+      <div class="courier-head">
+        <span class="courier-dot" style="background:${c.color}"></span>
+        <input type="text" class="courier-name-input" value="${escapeHtml(c.name)}"
+          style="border:none;background:none;font-weight:600;font-size:13.5px;flex:1;font-family:inherit;color:inherit;padding:2px 0;">
+        ${c.confirmed ? '<span class="chip green">confirmat</span>' : ''}
+        <button class="btn-icon" title="Șterge curier" data-remove="${c.id}">×</button>
+      </div>
+      <div class="courier-body">
+        <div class="courier-point-block">
+          <div class="field" style="margin-bottom:6px;">
+            <label>Punct de plecare</label>
+            <input type="text" class="start-input" data-courier="${c.id}" placeholder="ex: Depozit, Str. Industriilor 5, București" value="${escapeHtml(c.start.address)}">
+          </div>
+          <div class="field" style="margin-bottom:0; max-width:120px;">
+            <label>Ora de plecare</label>
+            <input type="text" class="departure-input" data-courier="${c.id}" placeholder="10:00" value="${escapeHtml(c.departureTime || '')}">
+          </div>
         </div>
-      </div>
 
-      <div class="field">
-        <label>Start</label>
-        <input class="start-input" type="text" value="${escapeHtml(c.start.address)}" placeholder="Adresa start">
-      </div>
-
-      <div class="field">
-        <label>Final</label>
-        <input class="end-input" type="text" value="${escapeHtml(c.end.address)}" placeholder="Adresa final">
-      </div>
-
-      <div class="field-row">
-        <div class="field">
-          <label>Ora plecare</label>
-          <input class="departure-input" type="time" value="${escapeHtml(c.departureTime)}">
+        <div class="courier-point-block">
+          <div class="field" style="margin-bottom:6px;">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>Punct de finalizare</span>
+              <span style="text-transform:none; font-weight:400; display:flex; align-items:center; gap:4px;">
+                <input type="checkbox" data-same="${c.id}" ${c.sameAsStart ? 'checked' : ''} style="margin:0;"> identic cu plecarea
+              </span>
+            </label>
+            <input type="text" class="end-input" data-courier="${c.id}" placeholder="ex: acasă, sediu, alt depozit"
+              value="${escapeHtml(c.end.address)}" style="${c.sameAsStart ? 'display:none;' : ''}">
+          </div>
+          <div class="field" style="margin-bottom:0; max-width:140px;">
+            <label>Ora limită (opțional)</label>
+            <input type="text" class="endlimit-input" data-courier="${c.id}" placeholder="18:00" value="${escapeHtml(c.endTimeLimit || '')}">
+          </div>
         </div>
-        <div class="field">
-          <label>Ora limită</label>
-          <input class="endlimit-input" type="time" value="${escapeHtml(c.endTimeLimit)}">
-        </div>
-      </div>
 
-      <div class="courier-stats">
-        <span class="chip green">${assignedCount} adrese</span>
-        <span class="chip orange">${totalToCollect.toFixed(0)} lei</span>
-        ${route ? `<span class="chip violet">${route.totalKm.toFixed(1)} km</span>` : `<span class="chip violet">0 km</span>`}
+        <button class="btn ${c.confirmed ? 'btn-secondary' : 'btn-primary'} btn-sm" data-confirm="${c.id}">
+          ${c.confirmed ? '✓ Curier confirmat' : 'Confirmă curier'}
+        </button>
+
+        <div class="stat-row">
+          <div class="stat">
+            <span class="stat-num" style="color:${c.color}">${assignedCount}</span>
+            <span class="stat-label">Adrese</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num">${route ? route.totalKm.toFixed(1) : '—'}</span>
+            <span class="stat-label">Km traseu</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num">${route ? formatMinutes(route.totalMin) : '—'}</span>
+            <span class="stat-label">Durată</span>
+          </div>
+        </div>
+        ${totalToCollect > 0 ? `
+          <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line-soft); font-size:11.5px; font-family:'JetBrains Mono',monospace; color:var(--ink-soft);">
+            de încasat: <strong style="color:var(--ink);">${totalToCollect.toFixed(2)} lei</strong>
+          </div>` : ''}
       </div>
     `;
 
     list.appendChild(card);
 
-    const nameEl = card.querySelector('[data-name]');
-    if (nameEl){
-      nameEl.addEventListener('input', () => {
-        c.name = nameEl.textContent.trim() || `Curier ${c.id}`;
-        renderAddresses();
-        renderRouteSummary();
-        redrawMap();
-      });
-    }
+    const nameInput = card.querySelector('.courier-name-input');
+    nameInput.addEventListener('input', () => {
+      c.name = nameInput.value.trim() || `Curier ${c.id}`;
+      renderRouteSummary();
+      redrawMap();
+    });
+
+    const removeBtn = card.querySelector(`[data-remove="${c.id}"]`);
+    if (removeBtn) removeBtn.addEventListener('click', () => removeCourier(c.id));
 
     const confirmBtn = card.querySelector(`[data-confirm="${c.id}"]`);
     if (confirmBtn) confirmBtn.addEventListener('click', () => confirmCourier(c.id));
 
     const startInput = card.querySelector('.start-input');
     const endInput = card.querySelector('.end-input');
+    const sameChk = card.querySelector(`[data-same="${c.id}"]`);
     const departureInput = card.querySelector('.departure-input');
     const endlimitInput = card.querySelector('.endlimit-input');
+
+    sameChk.addEventListener('change', () => {
+      c.sameAsStart = sameChk.checked;
+      endInput.style.display = c.sameAsStart ? 'none' : '';
+      if (c.sameAsStart){
+        c.end.address = '';
+        c.end.status = 'pending';
+        c.end.lat = null;
+        c.end.lng = null;
+      }
+      redrawMap();
+    });
 
     const onChange = () => {
       c.start.address = startInput.value.trim();
       c.end.address = endInput.value.trim();
-      c.sameAsStart = !c.end.address;
       c.departureTime = normalizeTime(departureInput.value);
       c.endTimeLimit = endlimitInput.value.trim() ? normalizeTime(endlimitInput.value) : '';
       c.start.status = 'pending';
@@ -288,10 +314,6 @@ function renderCouriers(){
     endlimitInput.addEventListener('change', onChange);
   });
 }
-
-// -------------------------------------------------------------------
-// ADDRESSES
-// -------------------------------------------------------------------
 
 function initAddressPanel(){
   const dz = document.getElementById('dropzone');
@@ -618,17 +640,6 @@ function renderAddresses(){
   });
 }
 
-function updateAddressWindow(addr, courier){
-  const base = normalizeTime(courier.departureTime || '10:00');
-  const idx = (state.routes[courier.id]?.order || []).indexOf(addr.id);
-  const minutes = 30 + Math.max(0, idx) * 20;
-  const arrival = addMinutes(base, minutes);
-  const start = roundDownToHour(arrival);
-  addr.deliveryWindowStart = start;
-  addr.deliveryWindowEnd = addMinutes(start, 120);
-  addr.deliveryWindow = `${addr.deliveryWindowStart} - ${addr.deliveryWindowEnd}`;
-}
-
 function syncRouteState(){
   state.couriers.forEach(c => {
     if (!state.routes[c.id]) return;
@@ -636,10 +647,6 @@ function syncRouteState(){
     computeRouteStats(c.id);
   });
 }
-
-// -------------------------------------------------------------------
-// GEO
-// -------------------------------------------------------------------
 
 function normalizeCityForGeocoding(city){
   const c = String(city || '').trim();
@@ -658,18 +665,10 @@ function normalizeTime(v){
 
 function buildAddressVariants(address){
   const raw = String(address || '').trim();
-  const city = normalizeCityForGeocoding(extractCityFromRaw(raw));
   const noRomania = raw.replace(/,\s*rom[aâ]nia\s*$/i, '').trim();
   const variants = [noRomania];
-  if (city && !/^sector\s*\d+$/i.test(city)) variants.unshift(noRomania.includes(city) ? noRomania : `${city}, ${noRomania}`);
   if (!/rom[aâ]nia/i.test(noRomania)) variants.push(`${noRomania}, România`);
-  if (city && !/rom[aâ]nia/i.test(noRomania)) variants.push(`${city}, România`);
   return [...new Set(variants.filter(Boolean))];
-}
-
-function extractCityFromRaw(raw){
-  const parts = String(raw || '').split(',').map(s => s.trim()).filter(Boolean);
-  return parts[0] || '';
 }
 
 function scoreResultConfidence(item){
@@ -785,10 +784,6 @@ async function ensureAllCourierPointsGeocoded(){
   }
 }
 
-// -------------------------------------------------------------------
-// IMPORT
-// -------------------------------------------------------------------
-
 function handleFile(file){
   const ext = file.name.split('.').pop().toLowerCase();
   if (ext === 'csv'){
@@ -871,10 +866,6 @@ function normalizePaymentMethod(v){
   return String(v || '').trim();
 }
 
-// -------------------------------------------------------------------
-// ROUTES
-// -------------------------------------------------------------------
-
 function initRoutePanel(){
   document.getElementById('autoAssignBtn')?.addEventListener('click', runAutoAssignAndRoute);
 }
@@ -902,14 +893,13 @@ async function runAutoAssignAndRoute(){
 
   showToast('Se repartizează adresele…');
 
-  // assign round-robin over valid couriers
   state.routes = {};
   validCouriers.forEach(c => {
     state.routes[c.id] = { order: [], legs: [], totalKm: 0, totalMin: 0 };
   });
 
   const unassigned = geocodedAddrs.slice();
-  validCouriers.forEach((c, idx) => {
+  validCouriers.forEach((c) => {
     const perCourier = Math.ceil(unassigned.length / validCouriers.length);
     const slice = unassigned.splice(0, perCourier);
     slice.forEach(a => {
@@ -945,7 +935,6 @@ async function optimizeCourierRoute(courierId){
     return;
   }
 
-  // Keep existing order if OSRM isn't available or route is short; simple sort by coords otherwise
   stops.sort((a, b) => (a.lat || 0) - (b.lat || 0));
   route.order = stops.map(a => a.id);
 
@@ -1013,11 +1002,21 @@ function computeRouteStats(courierId){
   });
 }
 
+function updateAddressWindow(addr, courier){
+  const base = normalizeTime(courier.departureTime || '10:00');
+  const idx = (state.routes[courier.id]?.order || []).indexOf(addr.id);
+  const minutes = 30 + Math.max(0, idx) * 20;
+  const arrival = addMinutes(base, minutes);
+  const start = roundDownToHour(arrival);
+  addr.deliveryWindowStart = start;
+  addr.deliveryWindowEnd = addMinutes(start, 120);
+  addr.deliveryWindow = `${addr.deliveryWindowStart} - ${addr.deliveryWindowEnd}`;
+}
+
 function renderRouteSummary(){
   const container = document.getElementById('routeSummary');
-  if (!container) return;
-
   const hasAny = Object.keys(state.routes).length > 0;
+
   if (!hasAny){
     container.innerHTML = `
       <div class="empty-state">
@@ -1044,48 +1043,57 @@ function renderRouteSummary(){
     block.innerHTML = `
       <div style="display:flex; align-items:center; gap:7px; margin-bottom:4px;">
         <span class="courier-dot" style="background:${c.color}"></span>
-        <span style="font-weight:600; font-size:14px;">${escapeHtml(c.name)}</span>
+        <span style="font-weight:600; font-size:13px;">${escapeHtml(c.name)}</span>
+        <span style="margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-soft);">
+          ${route.totalKm.toFixed(1)} km · ${formatMinutes(route.totalMin)}
+        </span>
       </div>
-      <div class="route-stats">
-        <span class="chip">${assignedAddrs.length} stopuri</span>
-        <span class="chip violet">${route.totalKm.toFixed(1)} km</span>
-        <span class="chip green">${route.totalMin.toFixed(0)} min</span>
-        <span class="chip orange">${totalToCollect.toFixed(0)} lei</span>
-        <span class="chip red">${cashToCollect.toFixed(0)} lei cash</span>
-      </div>
+      ${totalToCollect > 0 ? `
+        <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-soft); margin-bottom:8px; padding-left:18px;">
+          de încasat total: <strong style="color:var(--ink);">${totalToCollect.toFixed(2)} lei</strong>
+          ${cashToCollect > 0 ? ` · ramburs: <strong style="color:#B5400E;">${cashToCollect.toFixed(2)} lei</strong>` : ''}
+        </div>` : `<div style="margin-bottom:8px;"></div>`}
+      <div class="route-stops" data-courier="${c.id}"></div>
     `;
+    container.appendChild(block);
 
-    assignedAddrs.forEach((a, idx) => {
-      const row = document.createElement('div');
-      row.className = 'addr-item';
-      row.style.marginTop = '8px';
-      row.innerHTML = `
+    const stopsDiv = block.querySelector('.route-stops');
+    route.order.forEach((addrId, idx) => {
+      const addr = state.addresses.find(a => a.id === addrId);
+      if (!addr) return;
+      const stopEl = document.createElement('div');
+      stopEl.className = 'addr-item';
+      stopEl.draggable = true;
+      stopEl.dataset.id = addr.id;
+      stopEl.dataset.courier = c.id;
+
+      const titleLine = addr.clientName ? escapeHtml(addr.clientName) : escapeHtml(addr.raw);
+      const subAddressLine = addr.clientName ? `<div class="addr-sub-addr">${escapeHtml(addr.raw)}</div>` : '';
+      const detailsLine = addr.details ? `<div class="addr-sub-addr">📦 ${escapeHtml(addr.details)}</div>` : '';
+      const phoneLine = addr.phone ? `<div class="addr-sub-addr">${escapeHtml(addr.phone)}</div>` : '';
+      const paymentChip = (addr.amount != null || addr.paymentMethod)
+        ? `<div class="addr-payment-chip ${addr.paymentMethod === 'Ramburs' ? 'cod' : ''}">${addr.amount != null ? addr.amount.toFixed(2) + ' lei' : ''}${addr.amount != null && addr.paymentMethod ? ' · ' : ''}${escapeHtml(addr.paymentMethod || '')}</div>`
+        : '';
+      const win = route.windows ? route.windows[addr.id] : null;
+      const windowChip = win
+        ? `<div class="addr-window-chip${win.afterLimit ? ' warn' : ''}">⏱ ${win.windowStart}–${win.windowEnd}${win.afterLimit ? ' · după ora limită' : ''}</div>`
+        : '';
+
+      stopEl.innerHTML = `
+        <span class="chip" style="background:${c.color}; color:#fff; border-color:${c.color};">${idx + 1}</span>
         <div class="addr-main">
-          <div class="addr-title">
-            <span class="chip">${idx + 1}</span>
-            <span class="addr-client">${escapeHtml(a.clientName)}</span>
-          </div>
-          <div class="small">${escapeHtml(a.phone || '')}</div>
-          <div class="addr-sub">${escapeHtml(a.raw || '')}</div>
-          ${a.details ? `<div class="addr-note">${escapeHtml(a.details)}</div>` : ''}
-          <div class="addr-meta">
-            <span class="chip">${escapeHtml(a.paymentMethod || '')}</span>
-            <span class="chip">${Number(a.amount || 0).toFixed(0)} lei</span>
-            ${a.deliveryWindow ? `<span class="chip orange">${escapeHtml(a.deliveryWindow)}</span>` : ''}
-          </div>
-          ${a.customerNote ? `<div class="addr-note">${escapeHtml(a.customerNote)}</div>` : ''}
+          <div class="addr-client">${titleLine}</div>
+          ${windowChip}
+          ${subAddressLine}
+          ${detailsLine}
+          ${phoneLine}
+          ${paymentChip}
         </div>
       `;
-      block.appendChild(row);
+      stopsDiv.appendChild(stopEl);
     });
-
-    container.appendChild(block);
   });
 }
-
-// -------------------------------------------------------------------
-// MAP RENDER
-// -------------------------------------------------------------------
 
 function redrawMap(){
   if (!markersLayer || !routeLinesLayer) return;
@@ -1093,7 +1101,6 @@ function redrawMap(){
   routeLinesLayer.clearLayers();
 
   const legend = document.getElementById('mapLegend');
-  let legendHtml = '';
   const allPoints = [];
 
   state.couriers.forEach(c => {
@@ -1126,10 +1133,9 @@ function redrawMap(){
           fillOpacity: 1
         }).addTo(markersLayer);
 
-        const stopIdx = i + 1;
         m.bindPopup(`
           <div class="stop-popup">
-            <div class="sp-title">${escapeHtml(c.name)} · stop ${stopIdx}</div>
+            <div class="sp-title">${escapeHtml(c.name)} · stop ${i + 1}</div>
             <div class="sp-meta">${escapeHtml(a.clientName || '')}</div>
             <div class="sp-meta">${escapeHtml(a.phone || '')}</div>
             <div class="sp-meta">${escapeHtml(a.raw || '')}</div>
@@ -1154,8 +1160,9 @@ function redrawMap(){
   });
 
   if (legend){
-    legendHtml = state.couriers.map(c => `<span class="legend-item"><span class="legend-dot" style="background:${c.color}"></span>${escapeHtml(c.name)}</span>`).join('');
-    legend.innerHTML = legendHtml;
+    legend.innerHTML = state.couriers
+      .map(c => `<span class="legend-item"><span class="legend-dot" style="background:${c.color}"></span>${escapeHtml(c.name)}</span>`)
+      .join('');
   }
 
   if (allPoints.length){
@@ -1165,10 +1172,6 @@ function redrawMap(){
 
   updateMapTopBar();
 }
-
-// -------------------------------------------------------------------
-// EXPORT / ACTIONS
-// -------------------------------------------------------------------
 
 function initActionBar(){
   document.getElementById('resetBtn')?.addEventListener('click', () => {
@@ -1184,8 +1187,6 @@ function initActionBar(){
     renderAddresses();
     renderRouteSummary();
     redrawMap();
-    const exp = document.getElementById('exportBtn');
-    if (exp) exp.disabled = false;
     const gs = document.getElementById('geocodeSection');
     if (gs) gs.style.display = 'none';
     map.setView([45.9432, 24.9668], 7);
@@ -1223,10 +1224,6 @@ function exportRoutesXlsx(){
   XLSX.writeFile(wb, 'trasee_curieri.xlsx');
 }
 
-// -------------------------------------------------------------------
-// UTILS
-// -------------------------------------------------------------------
-
 function addMinutes(time, mins){
   const [h, m] = String(time || '00:00').split(':').map(Number);
   const d = new Date();
@@ -1249,4 +1246,11 @@ function escapeHtml(str){
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
+}
+
+function formatMinutes(mins){
+  if (!Number.isFinite(mins)) return '—';
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
 }
