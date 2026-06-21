@@ -361,3 +361,825 @@ function initAddressPanel(){
     fileInput.addEventListener('change', () => {
       if (fileInput.files.length) handleFile(fileInput.files[0]);
     });
+  }
+
+  document.getElementById('addManualBtn').addEventListener('click', () => {
+    showManualAddForm();
+  });
+
+  document.getElementById('geocodeBtn').addEventListener('click', () => geocodeAllPending());
+}
+
+function showEditAddressForm(addrId){
+  const addr = state.addresses.find(a => a.id === addrId);
+  if (!addr) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-title">Editează adresa</div>
+      <div class="field" style="margin-bottom:7px;">
+        <label>Nume client</label>
+        <input type="text" id="eaName" value="${escapeHtml(addr.clientName)}">
+      </div>
+      <div class="field" style="margin-bottom:7px;">
+        <label>Telefon</label>
+        <input type="text" id="eaPhone" value="${escapeHtml(addr.phone)}">
+      </div>
+      <div class="field" style="margin-bottom:7px;">
+        <label>Adresă (oraș, stradă, nr)</label>
+        <input type="text" id="eaAddress" value="${escapeHtml(addr.raw)}">
+      </div>
+      <div class="field" style="margin-bottom:7px;">
+        <label>Detalii (bloc/scară/ap/interfon)</label>
+        <input type="text" id="eaDetails" value="${escapeHtml(addr.details)}">
+      </div>
+      <div class="field-row" style="margin-bottom:7px;">
+        <div class="field">
+          <label>Sumă (lei)</label>
+          <input type="text" id="eaAmount" value="${addr.amount != null ? addr.amount : ''}">
+        </div>
+        <div class="field">
+          <label>Metodă plată</label>
+          <select id="eaPayment">
+            ${PAYMENT_METHODS.map(m => `<option value="${m}" ${addr.paymentMethod === m ? 'selected' : ''}>${m}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex; gap:6px; margin-top:14px;">
+        <button class="btn btn-secondary btn-sm" id="eaCancelBtn" style="flex:1;">Anulează</button>
+        <button class="btn btn-primary btn-sm" id="eaSaveBtn" style="flex:1;">Salvează</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('eaAddress').focus();
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  document.getElementById('eaCancelBtn').addEventListener('click', close);
+
+  document.getElementById('eaSaveBtn').addEventListener('click', () => {
+    const newAddressInput = document.getElementById('eaAddress').value.trim();
+    if (!newAddressInput){
+      showToast('Adresa este obligatorie.', true);
+      return;
+    }
+    const newAddress = /rom[aâ]nia/i.test(newAddressInput) ? newAddressInput : `${newAddressInput}, România`;
+    const addressChanged = newAddress !== addr.raw;
+
+    addr.clientName = document.getElementById('eaName').value.trim();
+    addr.phone = document.getElementById('eaPhone').value.trim();
+    addr.details = document.getElementById('eaDetails').value.trim();
+    addr.amount = parseAmount(document.getElementById('eaAmount').value);
+    addr.paymentMethod = document.getElementById('eaPayment').value;
+    addr.raw = newAddress;
+
+    if (addressChanged){
+      addr.lat = null;
+      addr.lng = null;
+      addr.status = 'pending';
+      Object.keys(state.routes).forEach(courierId => {
+        const route = state.routes[courierId];
+        const i = route.order.indexOf(addr.id);
+        if (i !== -1){
+          route.order.splice(i, 1);
+          if (route.order.length) recalcRouteDistance(parseInt(courierId));
+          else delete state.routes[courierId];
+        }
+      });
+    }
+
+    close();
+    renderAddresses();
+    renderCouriers();
+    renderRouteSummary();
+    maybeShowGeocodeButton();
+    redrawMap();
+  });
+}
+
+function showManualAddForm(){
+  const picker = document.getElementById('columnPicker');
+  picker.style.display = 'block';
+  picker.innerHTML = `
+    <div style="margin-bottom:8px; font-weight:600; color:#1e293b; font-size:12.5px;">Adaugă adresă manual</div>
+    <div class="field" style="margin-bottom:7px;">
+      <label>Nume client</label>
+      <input type="text" id="maName" placeholder="ex: Ana Popescu">
+    </div>
+    <div class="field" style="margin-bottom:7px;">
+      <label>Telefon</label>
+      <input type="text" id="maPhone" placeholder="ex: 07xx xxx xxx">
+    </div>
+    <div class="field" style="margin-bottom:7px;">
+      <label>Adresă (oraș, stradă, nr)</label>
+      <input type="text" id="maAddress" placeholder="ex: Str. Mihai Eminescu nr 10, Bucuresti">
+    </div>
+    <div class="field" style="margin-bottom:7px;">
+      <label>Detalii (bloc/scară/ap)</label>
+      <input type="text" id="maDetails" placeholder="ex: Bl. A, Ap. 12">
+    </div>
+    <div class="field-row" style="margin-bottom:7px;">
+      <div class="field">
+        <label>Sumă (lei)</label>
+        <input type="text" id="maAmount" placeholder="ex: 150">
+      </div>
+      <div class="field">
+        <label>Metodă plată</label>
+        <select id="maPayment">
+          ${PAYMENT_METHODS.map(m => `<option value="${m}">${m}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div style="display:flex; gap:6px; margin-top:4px;">
+      <button class="btn btn-secondary btn-sm" id="maCancelBtn" style="flex:1;">Anulează</button>
+      <button class="btn btn-primary btn-sm" id="maConfirmBtn" style="flex:1;">Adaugă</button>
+    </div>
+  `;
+  document.getElementById('maAddress').focus();
+  document.getElementById('maCancelBtn').addEventListener('click', () => { picker.style.display = 'none'; });
+  document.getElementById('maConfirmBtn').addEventListener('click', () => {
+    const addressInput = document.getElementById('maAddress').value.trim();
+    if (!addressInput){
+      showToast('Adresa este obligatorie.', true);
+      return;
+    }
+    const address = /rom[aâ]nia/i.test(addressInput) ? addressInput : `${addressInput}, România`;
+    addAddress({
+      raw: address,
+      details: document.getElementById('maDetails').value.trim(),
+      clientName: document.getElementById('maName').value.trim(),
+      phone: document.getElementById('maPhone').value.trim(),
+      amount: parseAmount(document.getElementById('maAmount').value),
+      paymentMethod: document.getElementById('maPayment').value
+    });
+    picker.style.display = 'none';
+    renderAddresses();
+    switchToTab('panel-adrese');
+    maybeShowGeocodeButton();
+  });
+}
+
+function handleFile(file){
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.csv')){
+    Papa.parse(file, {
+      complete: res => onParsedRows(res.data),
+      skipEmptyLines: true
+    });
+  } else if (name.endsWith('.xlsx') || name.endsWith('.xls')){
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'' });
+      onParsedRows(rows);
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    showToast('Format neacceptat. Folosește CSV sau XLSX.', true);
+  }
+}
+
+function onParsedRows(rows){
+  if (!rows || !rows.length){
+    showToast('Fișierul este gol.', true);
+    return;
+  }
+  showColumnMapper(rows);
+}
+
+const FIELD_DEFS = [
+  { key: 'orderNumber', label: 'Nr. Comandă', required: false, patterns: /order.?number|nr\.?\s*comand/i },
+  { key: 'firstName', label: 'Prenume', required: false, patterns: /first.?name|prenume/i },
+  { key: 'lastName', label: 'Nume', required: false, patterns: /last.?name|^nume$|de familie/i },
+  { key: 'phone', label: 'Telefon', required: false, patterns: /phone|telefon|tel\b|mobil/i },
+  { key: 'city', label: 'Oraș', required: false, patterns: /^city|ora[sș]|localitate/i },
+  { key: 'street', label: 'Stradă', required: true, patterns: /^strada$|^street$|^stradă$/i },
+  { key: 'number', label: 'Număr', required: false, patterns: /^nr\.?$|^number$|num[aă]r/i },
+  { key: 'details', label: 'Detalii (bloc/scară/ap)', required: false, patterns: /detalii|detail|^bloc$|scar[aă]|interfon/i },
+  { key: 'paymentMethod', label: 'Metodă de plată', required: false, patterns: /payment.?method|metod[aă].*plat[aă]|modalitate/i },
+  { key: 'amount', label: 'Sumă de plată', required: false, patterns: /amount|total|sum[aă]|valoare|pret|preț/i },
+];
+
+function guessColumnMapping(header){
+  const mapping = {};
+  FIELD_DEFS.forEach(field => {
+    const idx = header.findIndex(h => field.patterns.test(String(h)));
+    mapping[field.key] = idx !== -1 ? idx : null;
+  });
+  return mapping;
+}
+
+function showColumnMapper(rows){
+  const picker = document.getElementById('columnPicker');
+  if(!picker) return;
+  const looksLikeHeader = rows.length > 1 && rows[0].every(c => isNaN(parseFloat(c)) || c === '');
+  const header = looksLikeHeader ? rows[0].map(h => String(h)) : rows[0].map((_, i) => `Coloana ${i+1}`);
+  const guess = guessColumnMapping(header);
+
+  const colOptions = (selectedIdx) => {
+    let opts = `<option value="">— nefolosit —</option>`;
+    header.forEach((h, i) => {
+      opts += `<option value="${i}" ${i === selectedIdx ? 'selected' : ''}>${escapeHtml(h)}</option>`;
+    });
+    return opts;
+  };
+
+  picker.style.display = 'block';
+  picker.innerHTML = `
+    <div style="margin-bottom:8px; font-weight:600; color:#1e293b; font-size:12.5px;">Asociază coloanele din fișier</div>
+    <label style="display:flex; align-items:center; gap:5px; margin-bottom:9px; font-weight:400;">
+      <input type="checkbox" id="hasHeaderCb" ${looksLikeHeader ? 'checked' : ''}> prima linie este antet
+    </label>
+    ${FIELD_DEFS.map(field => `
+      <div class="field" style="margin-bottom:7px;">
+        <label>${field.label}${field.required ? ' *' : ''}</label>
+        <select id="map_${field.key}" style="width:100%; padding:5px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px;">
+          ${colOptions(guess[field.key])}
+        </select>
+      </div>
+    `).join('')}
+    <button class="btn btn-primary btn-block btn-sm" id="confirmColBtn" style="margin-top:6px;">Importă ${rows.length - (looksLikeHeader ? 1 : 0)} rânduri</button>
+  `;
+
+  document.getElementById('confirmColBtn').addEventListener('click', () => {
+    const hasHeader = document.getElementById('hasHeaderCb').checked;
+    const startIdx = hasHeader ? 1 : 0;
+    const colMap = {};
+    FIELD_DEFS.forEach(field => {
+      const val = document.getElementById(`map_${field.key}`).value;
+      colMap[field.key] = val === '' ? null : parseInt(val);
+    });
+
+    if (colMap.street === null){
+      showToast('Trebuie să selectezi coloana cu strada.', true);
+      return;
+    }
+
+    const getCell = (row, key) => colMap[key] !== null ? String(row[colMap[key]] ?? '').trim() : '';
+
+    let imported = 0;
+    for (let i = startIdx; i < rows.length; i++){
+      const row = rows[i];
+      const firstName = getCell(row, 'firstName');
+      const lastName = getCell(row, 'lastName');
+      const clientName = [firstName, lastName].filter(Boolean).join(' ');
+      const city = getCell(row, 'city') || 'Bucuresti';
+      const streetRaw = getCell(row, 'street');
+      const number = getCell(row, 'number');
+      const details = getCell(row, 'details');
+
+      if (!streetRaw) continue;
+
+      const streetPart = [streetRaw, number].filter(Boolean).join(' ');
+      const fullAddress = [streetPart, city, 'Romania'].filter(Boolean).join(', ');
+
+      addAddress({
+        orderNumber: getCell(row, 'orderNumber'),
+        raw: fullAddress,
+        details,
+        clientName,
+        phone: getCell(row, 'phone'),
+        amount: colMap.amount !== null ? parseAmount(row[colMap.amount]) : null,
+        paymentMethod: colMap.paymentMethod !== null ? normalizePaymentMethod(row[colMap.paymentMethod]) : ''
+      });
+      imported++;
+    }
+
+    picker.style.display = 'none';
+    renderAddresses();
+    switchToTab('panel-adrese');
+    maybeShowGeocodeButton();
+  });
+}
+
+function parseAmount(val){
+  if (val === null || val === undefined || val === '') return null;
+  const cleaned = String(val).replace(/[^\d.,-]/g, '').replace(',', '.');
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+function normalizePaymentMethod(val){
+  const str = String(val || '').trim();
+  if (!str) return '';
+  const lower = str.toLowerCase();
+  const exact = PAYMENT_METHODS.find(m => m.toLowerCase() === lower);
+  if (exact) return exact;
+  const contains = PAYMENT_METHODS.find(m => lower.includes(m.toLowerCase()));
+  if (contains) return contains;
+  return str;
+}
+
+function addAddress(data){
+  state.addresses.push({
+    id: state.nextAddrId++,
+    orderNumber: data.orderNumber || '',
+    raw: data.raw,
+    details: data.details || '',
+    clientName: data.clientName || '',
+    phone: data.phone || '',
+    amount: data.amount ?? null,
+    paymentMethod: data.paymentMethod || '',
+    lat: null,
+    lng: null,
+    status: 'pending',
+    courierId: null
+  });
+}
+
+function maybeShowGeocodeButton(){
+  const section = document.getElementById('geocodeSection');
+  const btn = document.getElementById('geocodeBtn');
+  const statusRow = document.getElementById('geocodeStatus');
+  if(!section) return;
+  const pending = state.addresses.filter(a => a.status === 'pending').length;
+
+  if (pending > 0){
+    section.style.display = 'block';
+    statusRow.style.display = 'none';
+    btn.style.display = 'block';
+  } else {
+    section.style.display = 'none';
+  }
+}
+
+function renderAddresses(){
+  const list = document.getElementById('addrList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  state.addresses.forEach(a => {
+    const card = document.createElement('div');
+    card.className = `address-card status-${a.status}`;
+
+    let statusText = 'În așteptare';
+    if (a.status === 'ok') statusText = 'Localizat';
+    if (a.status === 'error') statusText = 'Eroare localizare';
+
+    const courierOptions = state.couriers.map(c => `
+      <option value="${c.id}" ${a.courierId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>
+    `).join('');
+
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:11px; color:#64748b;">
+        <span>ID #${a.id} ${a.orderNumber ? `· Comandă: ${escapeHtml(a.orderNumber)}` : ''}</span>
+        <strong>${statusText}</strong>
+      </div>
+      <div style="font-weight:600; font-size:13px; color:#1e293b;">${escapeHtml(a.clientName || 'Client Anonim')}</div>
+      <div style="font-size:12px; margin:2px 0; color:#334155;">${escapeHtml(a.raw)}</div>
+      ${a.details ? `<div style="font-size:11px; color:#64748b; margin-bottom:4px;">Detalii: ${escapeHtml(a.details)}</div>` : ''}
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:6px; border-top:1px solid #e2e8f0;">
+        <div style="font-size:11px;">
+          ${a.phone ? `📞 ${escapeHtml(a.phone)} ` : ''}
+          ${a.amount ? `💰 <strong>${a.amount} lei</strong> (${escapeHtml(a.paymentMethod)})` : ''}
+        </div>
+        <div style="display:flex; gap:4px;">
+          <button class="btn btn-secondary btn-sm" onclick="showEditAddressForm(${a.id})">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAddress(${a.id})">×</button>
+        </div>
+      </div>
+
+      ${a.status === 'ok' ? `
+        <div style="margin-top:6px;">
+          <select class="courier-assign-select" data-addr="${a.id}" style="width:100%; padding:4px; font-size:12px;">
+            <option value="">— Nerepartizat —</option>
+            ${courierOptions}
+          </select>
+        </div>
+      ` : ''}
+    `;
+    list.appendChild(card);
+  });
+
+  list.querySelectorAll('.courier-assign-select').forEach(select => {
+    select.addEventListener('change', () => {
+      const addrId = parseInt(select.dataset.addr);
+      const courierId = select.value ? parseInt(select.value) : null;
+      assignAddressToCourier(addrId, courierId);
+    });
+  });
+
+  updateMapTopBar();
+}
+
+function deleteAddress(id){
+  state.addresses = state.addresses.filter(a => a.id !== id);
+  Object.keys(state.routes).forEach(cId => {
+    const r = state.routes[cId];
+    r.order = r.order.filter(aId => aId !== id);
+    if (r.order.length === 0) delete state.routes[cId];
+    else recalcRouteDistance(parseInt(cId));
+  });
+  renderAddresses();
+  renderRouteSummary();
+  maybeShowGeocodeButton();
+  redrawMap();
+}
+
+function assignAddressToCourier(addrId, courierId){
+  const addr = state.addresses.find(a => a.id === addrId);
+  if (!addr) return;
+
+  const oldCourierId = addr.courierId;
+  addr.courierId = courierId;
+
+  if (oldCourierId && state.routes[oldCourierId]) {
+    state.routes[oldCourierId].order = state.routes[oldCourierId].order.filter(id => id !== addrId);
+    if (state.routes[oldCourierId].order.length === 0) delete state.routes[oldCourierId];
+    else recalcRouteDistance(oldCourierId);
+  }
+
+  if (courierId) {
+    if (!state.routes[courierId]) {
+      state.routes[courierId] = { order: [], legs: [], totalKm: 0, totalMin: 0 };
+    }
+    if (!state.routes[courierId].order.includes(addrId)) {
+      state.routes[courierId].order.push(addrId);
+    }
+    recalcRouteDistance(courierId);
+  }
+
+  renderAddresses();
+  renderCouriers();
+  renderRouteSummary();
+  redrawMap();
+}
+
+// -------------------------------------------------------------------
+// GEOCODING (Nominatim API)
+// -------------------------------------------------------------------
+async function geocodeOne(addressStr){
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(addressStr)}`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'CourierRoutePlannerApp/1.0' } });
+    const data = await res.json();
+    if (data && data.length > 0){
+      return {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon)
+      };
+    }
+  } catch (e) {
+    console.error('Eroare geocodare pentru: ' + addressStr, e);
+  }
+  return null;
+}
+
+async function geocodeAllPending(){
+  const pending = state.addresses.filter(a => a.status === 'pending');
+  if (!pending.length) return;
+
+  const btn = document.getElementById('geocodeBtn');
+  const statusRow = document.getElementById('geocodeStatus');
+  btn.style.display = 'none';
+  statusRow.style.display = 'flex';
+
+  for (let i = 0; i < pending.length; i++){
+    const a = pending[i];
+    const res = await geocodeOne(a.raw);
+    if (res){
+      a.lat = res.lat;
+      a.lng = res.lng;
+      a.status = 'ok';
+    } else {
+      a.status = 'error';
+    }
+    await new Promise(r => setTimeout(r, 1000)); // rate limiting obligatoriu
+  }
+
+  btn.style.display = 'block';
+  statusRow.style.display = 'none';
+  maybeShowGeocodeButton();
+  renderAddresses();
+  redrawMap();
+}
+
+// -------------------------------------------------------------------
+// ROUTING (OSRM API) & OPTIMIZATION
+// -------------------------------------------------------------------
+async function recalcRouteDistance(courierId){
+  const courier = state.couriers.find(c => c.id === courierId);
+  const route = state.routes[courierId];
+  if (!courier || !route || !route.order.length) return;
+
+  const points = [];
+  if (courier.start.lat) points.push(courier.start);
+  
+  route.order.forEach(id => {
+    const addr = state.addresses.find(a => a.id === id);
+    if (addr && addr.lat) points.push(addr);
+  });
+
+  if (!courier.sameAsStart && courier.end.lat) points.push(courier.end);
+  else if (courier.start.lat) points.push(courier.start);
+
+  if (points.length < 2) return;
+
+  const coordStr = points.map(p => `${p.lng},${p.lat}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.code === 'Ok' && data.routes.length > 0){
+      const rData = data.routes[0];
+      route.totalKm = rData.distance / 1000;
+      route.totalMin = rData.duration / 60;
+      route.geometry = rData.geometry;
+      route.totalMin += route.order.length * 5; 
+    }
+  } catch (e) {
+    console.error('Eroare calcul rute OSRM pentru curierul ' + courierId, e);
+  }
+
+  renderCouriers();
+  renderRouteSummary();
+  redrawMap();
+}
+
+function initActionBar(){
+  document.getElementById('autoAssignBtn').addEventListener('click', () => {
+    autoDistributeAddresses();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (confirm('Sigur vrei să ștergi toate datele?')) {
+      state.couriers = [];
+      state.addresses = [];
+      state.routes = {};
+      state.nextCourierId = 1;
+      state.nextAddrId = 1;
+      addCourier();
+      renderCouriers();
+      renderAddresses();
+      renderRouteSummary();
+      maybeShowGeocodeButton();
+      redrawMap();
+    }
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    exportToExcel();
+  });
+}
+
+function autoDistributeAddresses(){
+  const confirmedCouriers = state.couriers.filter(c => c.confirmed && c.start.lat);
+  const okAddresses = state.addresses.filter(a => a.status === 'ok');
+
+  if (!confirmedCouriers.length){
+    showToast('Nu ai niciun curier validat/confirmat cu punct de plecare stabilit!', true);
+    switchToTab('panel-curieri');
+    return;
+  }
+  if (!okAddresses.length){
+    showToast('Nu există adrese localizate corect pentru repartizare!', true);
+    return;
+  }
+
+  okAddresses.forEach(addr => {
+    let minDist = Infinity;
+    let bestCourierId = confirmedCouriers[0].id;
+
+    confirmedCouriers.forEach(c => {
+      const d = Math.getDistance(addr.lat, addr.lng, c.start.lat, c.start.lng);
+      if (d < minDist){
+        minDist = d;
+        bestCourierId = c.id;
+      }
+    });
+
+    addr.courierId = bestCourierId;
+    if (!state.routes[bestCourierId]) {
+      state.routes[bestCourierId] = { order: [], legs: [], totalKm: 0, totalMin: 0 };
+    }
+    if (!state.routes[bestCourierId].order.includes(addr.id)) {
+      state.routes[bestCourierId].order.push(addr.id);
+    }
+  });
+
+  confirmedCouriers.forEach(c => {
+    const r = state.routes[c.id];
+    if (!r || !r.order.length) return;
+
+    let currentLat = c.start.lat;
+    let currentLng = c.start.lng;
+    const remaining = [...r.order];
+    const sortedOrder = [];
+
+    while (remaining.length > 0) {
+      let closestIdx = 0;
+      let closestDist = Infinity;
+
+      for (let i = 0; i < remaining.length; i++) {
+        const addr = state.addresses.find(a => a.id === remaining[i]);
+        const d = Math.getDistance(currentLat, currentLng, addr.lat, addr.lng);
+        if (d < closestDist) {
+          closestDist = d;
+          closestIdx = i;
+        }
+      }
+
+      const nextId = remaining.splice(closestIdx, 1)[0];
+      sortedOrder.push(nextId);
+      const nextAddr = state.addresses.find(a => a.id === nextId);
+      currentLat = nextAddr.lat;
+      currentLng = nextAddr.lng;
+    }
+
+    r.order = sortedOrder;
+    recalcRouteDistance(c.id);
+  });
+
+  renderAddresses();
+  renderCouriers();
+  renderRouteSummary();
+  redrawMap();
+  document.getElementById('exportBtn').removeAttribute('disabled');
+  showToast('Repartizarea și optimizarea automată s-au încheiat.');
+}
+
+// -------------------------------------------------------------------
+// SUMMARY & RENDERING UTILS
+// -------------------------------------------------------------------
+function initRoutePanel(){}
+
+function renderRouteSummary(){
+  const container = document.getElementById('routeSummary');
+  if (!container) return;
+  container.innerHTML = '';
+
+  let hasAnyRoute = false;
+
+  state.couriers.forEach(c => {
+    const r = state.routes[c.id];
+    if (!r || !r.order.length) return;
+    hasAnyRoute = true;
+
+    const div = document.createElement('div');
+    div.className = 'route-summary-item';
+    div.style.borderLeftColor = c.color;
+
+    let stopsHtml = '';
+    let currentMin = timeToMinutes(c.departureTime || '10:00');
+
+    r.order.forEach((addrId, idx) => {
+      const addr = state.addresses.find(a => a.id === addrId);
+      if (!addr) return;
+      
+      if (idx > 0 && r.totalMin) {
+        currentMin += (r.totalMin / r.order.length);
+      } else {
+        currentMin += 10;
+      }
+
+      stopsHtml += `
+        <div style="font-size:12px; margin:4px 0; padding-left:12px; border-left:2px solid #cbd5e1;">
+          <strong>${idx + 1}. ${minutesToTime(currentMin)}</strong> — ${escapeHtml(addr.clientName)} (${escapeHtml(addr.raw)})
+        </div>
+      `;
+    });
+
+    div.innerHTML = `
+      <div style="font-weight:700; font-size:14px; margin-bottom:6px; color:#1e293b;">${escapeHtml(c.name)}</div>
+      <div style="font-size:12px; color:#64748b; margin-bottom:8px;">
+        Pornire la ${c.departureTime} · Total: ${r.totalKm.toFixed(1)} km · ~ ${formatMinutes(r.totalMin)}
+      </div>
+      <div>${stopsHtml}</div>
+    `;
+    container.appendChild(div);
+  });
+
+  if (!hasAnyRoute) {
+    container.innerHTML = '<div style="font-size:12px; color:#64748b; text-align:center; padding:20px;">Nu există trasee active calculate.</div>';
+  }
+}
+
+function BlacklistAreaCheck() { return false; } // fallback
+
+function redrawMap(){
+  markersLayer.clearLayers();
+  routeLinesLayer.clearLayers();
+
+  const bounds = [];
+
+  state.couriers.forEach(c => {
+    if (c.start.lat) {
+      const p = [c.start.lat, c.start.lng];
+      bounds.push(p);
+      L.circleMarker(p, { radius: 8, fillColor: c.color, color: '#ffffff', weight: 2, fillOpacity: 1 }).addTo(markersLayer);
+    }
+  });
+
+  state.addresses.forEach(a => {
+    if (a.lat) {
+      const p = [a.lat, a.lng];
+      bounds.push(p);
+      const courier = state.couriers.find(c => c.id === a.courierId);
+      const color = courier ? courier.color : '#64748b';
+
+      L.circleMarker(p, { radius: 6, fillColor: color, color: '#ffffff', weight: 1.5, fillOpacity: 0.9 }).addTo(markersLayer)
+       .bindPopup(`<strong>${escapeHtml(a.clientName || 'Client')}</strong><br>${escapeHtml(a.raw)}`);
+    }
+  });
+
+  state.couriers.forEach(c => {
+    const r = state.routes[c.id];
+    if (r && r.geometry) {
+      L.geoJSON(r.geometry, { style: { color: c.color, weight: 4, opacity: 0.85 } }).addTo(routeLinesLayer);
+    }
+  });
+
+  if (bounds.length > 0 && map) {
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+function exportToExcel(){
+  const rows = [[
+    'Curier', 'Fereastră Orară', 'Nr. Comandă', 'Prenume', 'Nume', 'Telefon',
+    'Adresă Livrare', 'Detalii Locație', 'Metodă Plată', 'Sumă de Plată', 'Notă Client'
+  ]];
+
+  let fallbackOrderNo = 1001;
+
+  state.couriers.forEach(c => {
+    const route = state.routes[c.id];
+    if (!route) return;
+    let currentMin = timeToMinutes(c.departureTime || '10:00');
+
+    route.order.forEach((id, index) => {
+      const addr = state.addresses.find(a => a.id === id);
+      if (!addr) return;
+
+      if (index > 0 && route.totalMin) {
+        currentMin += (route.totalMin / route.order.length);
+      } else {
+        currentMin += 10;
+      }
+      
+      const timeEst = minutesToTime(currentMin);
+      const orderNo = addr.orderNumber || fallbackOrderNo++;
+      
+      rows.push([
+        c.name, timeEst, orderNo,
+        addr.clientName.split(' ')[0] || '', addr.clientName.split(' ')[1] || '', addr.phone || '',
+        addr.raw, addr.details || '',
+        addr.paymentMethod || '', addr.amount != null ? addr.amount : '',
+        ''
+      ]);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Trasee');
+  XLSX.writeFile(wb, `trasee_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+Math.getDistance = function(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+function normalizeTime(val){
+  const str = String(val || '').trim();
+  if (!str) return '10:00';
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+    const parts = str.split(':');
+    return `${parts[0].padStart(2, '0')}:${parts[1]}`;
+  }
+  return '10:00';
+}
+
+function timeToMinutes(timeStr){
+  const p = timeStr.split(':');
+  return parseInt(p[0]) * 60 + parseInt(p[1]);
+}
+
+function minutesToTime(m){
+  const h = Math.floor(m / 60) % 24;
+  const mins = Math.floor(m % 60);
+  return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function formatMinutes(m){
+  if (m < 60) return `${Math.round(m)} min`;
+  const h = Math.floor(m / 60);
+  const mins = Math.round(m % 60);
+  return `${h}h ${mins}m`;
+}
+
+function escapeHtml(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
