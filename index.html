@@ -1,87 +1,103 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Route Planner</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planificator Trasee Curieri - București & Ilfov</title>
+  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css" />
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-title">Route Planner</div>
-        <div class="brand-sub">Curieri · adrese · intervale de livrare</div>
-        <div id="dateStamp" class="date-stamp"></div>
-      </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Import</h2>
+  <div class="app-container">
+    
+    <header class="app-header">
+      <div class="header-main">
+        <h1 id="mapTitle">Niciun traseu activ</h1>
+        <span id="dateStamp" class="date-stamp">Manifest de livrare...</span>
+        <div id="mapSub" style="font-size: 12px; color: #64748b; margin-top: 4px;">0 adrese · 0 curieri</div>
+      </div>
+      <div class="action-bar">
+        <button id="exportBtn" class="btn btn-secondary" disabled>Exportă Excel</button>
+        <button id="resetBtn" class="btn btn-danger">Resetează Tot</button>
+      </div>
+    </header>
+
+    <div class="tabs-nav">
+      <button class="tab tab-btn active" data-panel="panel-curieri">Curieri (<span id="courierCount">0</span>)</button>
+      <button class="tab tab-btn" data-panel="panel-adrese">Adrese / Import</button>
+      <button class="tab tab-btn" data-panel="panel-trasee">Trasee Active</button>
+    </div>
+
+    <div class="main-layout" style="display: grid; grid-template-columns: 450px 1fr; gap: 20px; align-items: start;">
+      
+      <div class="panels-column">
+        
+        <div id="panel-curieri" class="panel active">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 style="margin:0; font-size:16px;">Gestionare Curieri</h2>
+            <button id="addCourierBtn" class="btn btn-primary btn-sm">+ Adaugă Curier</button>
+          </div>
+          <div id="courierList" class="list-container">
+            </div>
         </div>
 
-        <div id="dropzone" class="dropzone">
-          Trage fișierul aici sau dă click pentru upload.
-          <div class="dropzone-sub">CSV / XLSX / XLS / Numbers exportat</div>
+        <div id="panel-adrese" class="panel">
+          <h2 style="font-size:16px; margin-bottom:15px;">Import și Listă Adrese</h2>
+          
+          <div id="dropzone" class="dropzone" style="border: 2px dashed #cbd5e1; padding: 20px; text-align: center; border-radius: 6px; cursor: pointer; background: #f8fafc; margin-bottom: 15px;">
+            <div style="font-size: 24px; margin-bottom: 8px;">📁</div>
+            <div style="font-weight: 500; font-size: 13px;">Trage fișierul Excel / CSV aici sau dă click</div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Suportă .xlsx, .xls, .csv</div>
+            <input type="file" id="fileInput" accept=".csv, .xlsx, .xls" style="display: none;">
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <button id="addManualBtn" class="btn btn-secondary btn-sm" style="flex: 1;">+ Adaugă Manual</button>
+            <button id="autoAssignBtn" class="btn btn-success btn-sm" style="flex: 1;">⚡ Repartizează inteligent</button>
+          </div>
+
+          <div id="geocodeSection" style="display: none; background: #eff6ff; padding: 12px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #bfdbfe;">
+            <button id="geocodeBtn" class="btn btn-primary btn-sm" style="width: 100%;">Localizează adresele în B / IF</button>
+            <div id="geocodeStatus" style="display: none; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: #1e40af; padding: 5px 0;">
+              <span>⏳</span> <span>Se validează adresele (1s delay)...</span>
+            </div>
+          </div>
+
+          <div id="addrList" class="list-container">
+            </div>
         </div>
 
-        <input id="fileInput" type="file" accept=".csv,.xlsx,.xls,.numbers" hidden />
-        <button id="addManualBtn" class="btn btn-secondary" type="button">Adaugă adresă manual</button>
-        <button id="geocodeBtn" class="btn btn-primary" type="button">Localizează adresele</button>
-
-        <div id="geocodeSection" class="geocode-section" style="display:none;"></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Curieri <span id="courierCount">0</span></h2>
+        <div id="panel-trasee" class="panel">
+          <h2 style="font-size:16px; margin-bottom:15px;">Ordine Oprire pe Traseu (Balansat)</h2>
+          <div id="routeSummary">
+            </div>
         </div>
-        <div id="courierList" class="courier-list"></div>
-        <button id="addCourierBtn" class="btn btn-secondary" type="button">+ Adaugă curier</button>
+
+        <div id="columnPicker" class="panel" style="display: none; margin-top: 15px; background: #fff; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+          </div>
+
       </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Adrese</h2>
+      <div class="map-column" style="position: sticky; top: 20px;">
+        <div id="map-container" style="background: #ffffff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+          <div id="map" style="width: 100%; height: calc(100vh - 180px); min-height: 520px; border-radius: 6px;"></div>
         </div>
-        <div id="addrList" class="addr-list"></div>
       </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Trasee</h2>
-        </div>
-        <div id="routeSummary" class="route-summary"></div>
-      </div>
-
-      <div class="panel panel-actions">
-        <button id="autoAssignBtn" class="btn btn-primary" type="button">Repartizează automat</button>
-        <button id="exportBtn" class="btn btn-secondary" type="button">Export Excel</button>
-        <button id="resetBtn" class="btn btn-danger" type="button">Reset</button>
-      </div>
-    </aside>
-
-    <main class="main">
-      <div class="map-topbar">
-        <div>
-          <div id="mapTitle" class="map-title">Niciun traseu activ</div>
-          <div id="mapSub" class="map-sub">0 adrese · 0 curieri</div>
-        </div>
-        <div id="mapLegend" class="map-legend"></div>
-      </div>
-      <div id="map"></div>
-    </main>
+    </div>
   </div>
 
-  <div id="columnPicker" class="column-picker" style="display:none;"></div>
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: #1e293b; color: #fff; padding: 12px 20px; border-radius: 6px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: none; transition: all 0.3s;"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app-9-2.js"></script>
+  
+  <script src="app.js"></script>
 </body>
 </html>
