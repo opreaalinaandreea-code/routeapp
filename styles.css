@@ -10,6 +10,7 @@
   --line:#d4cfc4;
   --soft:#fbfaf7;
   --shadow:0 10px 30px rgba(26,43,46,.08);
+  --line-soft:#e6e0d3;
 }
 
 *{box-sizing:border-box}
@@ -108,14 +109,6 @@ button,input,select,textarea{
   padding-top:10px;
   border-top:1px solid var(--line);
 }
-.section-caption{
-  font-family:"JetBrains Mono",monospace;
-  font-size:11px;
-  text-transform:uppercase;
-  color:var(--ink-soft);
-  letter-spacing:.08em;
-  margin-bottom:8px;
-}
 
 .btn{
   display:inline-flex;
@@ -176,23 +169,69 @@ button,input,select,textarea{
   gap:8px;
 }
 
-.courier-title{
+.courier-head{
   display:flex;
   align-items:center;
-  justify-content:space-between;
   gap:8px;
 }
 
+.courier-head strong,
 .courier-title strong{
   font-family:"Space Grotesk",sans-serif;
 }
 
+.courier-dot{
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  flex:0 0 auto;
+}
+
+.btn-icon{
+  width:26px;
+  height:26px;
+  padding:0;
+  border:1px solid var(--line);
+  background:#fff;
+  cursor:pointer;
+}
+
+.courier-body{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.courier-point-block{
+  border-top:1px solid var(--line-soft);
+  padding-top:8px;
+}
+
+.stat-row,
 .courier-stats,
 .addr-meta,
 .route-stats{
   display:flex;
   flex-wrap:wrap;
   gap:6px;
+}
+
+.stat{
+  border:1px solid var(--line);
+  padding:7px 9px;
+  display:flex;
+  flex-direction:column;
+  min-width:84px;
+  background:#fff;
+}
+.stat-num{
+  font-family:"JetBrains Mono",monospace;
+  font-size:14px;
+  font-weight:600;
+}
+.stat-label{
+  font-size:11px;
+  color:var(--ink-soft);
 }
 
 .chip{
@@ -247,6 +286,13 @@ button,input,select,textarea{
   word-break:break-word;
 }
 
+.addr-sub-addr{
+  margin-top:3px;
+  color:var(--ink-soft);
+  font-size:12px;
+  line-height:1.45;
+}
+
 .addr-status{
   margin-top:6px;
   font-size:12px;
@@ -285,6 +331,28 @@ button,input,select,textarea{
 .addr-actions .btn{
   margin-top:0;
   width:100%;
+}
+
+.addr-window-chip,
+.addr-payment-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  margin-top:4px;
+  padding:4px 7px;
+  border:1px solid var(--line);
+  font-family:"JetBrains Mono",monospace;
+  font-size:11px;
+  line-height:1;
+  background:#fff;
+}
+.addr-payment-chip.cod{
+  border-color:var(--accent-2);
+  color:var(--accent-2);
+}
+.addr-window-chip.warn{
+  border-color:var(--red);
+  color:var(--red);
 }
 
 .empty-state{
